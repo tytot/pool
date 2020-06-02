@@ -26,9 +26,8 @@ public class Vector2 {
 		return i * i + j * j;
 	}
 
-	public void multiply(double scalar) {
-		i *= scalar;
-		j *= scalar;
+	public Vector2 multiply(double scalar) {
+		return new Vector2(i * scalar, j * scalar);
 	}
 
 	public double dot(Vector2 other) {
@@ -36,14 +35,21 @@ public class Vector2 {
 		return out;
 	}
 
-	public void add(Vector2 other) {
-		i += other.I();
-		j += other.J();
+	public Vector2 add(Vector2 other) {
+		return new Vector2(i + other.I(), j + other.J());
 	}
 
-	public void subtract(Vector2 other) {
-		i -= other.I();
-		j -= other.J();
+	public Vector2 subtract(Vector2 other) {
+		return new Vector2(i - other.I(), j - other.J());
+	}
+	
+	public Vector2 normalize() {
+		if (magSquared() == 0.0)
+			return new Vector2(0.0, 0.0);
+		
+		double newI = i / Math.sqrt(magSquared());
+		double newJ = j / Math.sqrt(magSquared());
+		return new Vector2(newI, newJ);
 	}
 
 	public Vector2 clone() {

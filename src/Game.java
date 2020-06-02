@@ -1,39 +1,27 @@
 public class Game {
 	private Ball[] balls = new Ball[16];
 	
-	private int p1Balls = 0;
-	private int p1Type = 0;
-	private int p2Balls = 0;
-	private int p2Type = 0;
+	private int[] ballCounts = {0, 0};
+	private int[] ballTypes = {0, 0};
 	
 	public static final int LEGAL = 0;
 	public static final int SCRATCH = 1;
-	public static final int LOSE = 2;
-	public static final int WIN = 3;
 	
 	private int turn = 1;
+	private int winner = 0;
 	
 	public Game(Ball[] balls) {
 		this.balls = balls;
 	}
 	
-	public int getP1Balls() {
-		return p1Balls;
+	public int getBallCount(int player) {
+		return ballCounts[player - 1];
 	}
-	public void addP1Ball() {
-		p1Balls++;
+	public void addBall(int player) {
+		ballCounts[player - 1]++;
 	}
-	public int getP1Type() {
-		return p1Type;
-	}
-	public int getP2Balls() {
-		return p2Balls;
-	}
-	public void addP2Ball() {
-		p2Balls++;
-	}
-	public int getP2Type() {
-		return p2Type;
+	public int getBallType(int player) {
+		return ballTypes[player - 1];
 	}
 	
 	public int getTurn() {
@@ -47,21 +35,29 @@ public class Game {
 		System.out.println("Player " + turn + "'s turn");
 	}
 	
+	public int getWinner() {
+		return winner;
+	}
+	
+	public void setWinner(int winner) {
+		this.winner = winner;
+	}
+	
 	public void setBallTypes(Ball ball) {
 		int ballType = ball.getType();
-		if (turn == 1) {
-			p1Type = ballType;
-			p2Type = ballType == Ball.SOLID ? Ball.STRIPES : Ball.SOLID;
-		} else {
-			p2Type = ballType;
-			p1Type = ballType == Ball.SOLID ? Ball.STRIPES : Ball.SOLID;
+		if (ballTypes[0] == 0) {
+			int other = turn + 1;
+			if (other == 3)
+				other = 1;
+			ballTypes[turn - 1] = ballType;
+			ballTypes[other - 1] = ballType == Ball.SOLID ? Ball.STRIPES : Ball.SOLID;
 		}
-		System.out.println("p1 type = " + p1Type);
-		System.out.println("p2 type = " + p2Type);
+		System.out.println("p1 type = " + ballTypes[0]);
+		System.out.println("p2 type = " + ballTypes[1]);
 	}
 	
 	public int pocket(Ball ball) {
-		if (p1Balls == 0) {
+		if (ballCounts[0] == 0) {
 			setBallTypes(ball);
 		}
 		return LEGAL;

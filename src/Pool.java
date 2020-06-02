@@ -21,31 +21,38 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 	private boolean movingBar = false;
 	private int retractSpeed = 0;
 	private double cueAngle = Math.toRadians(-90);
-	private int[] cuePos = {261, 697};
+	//cuePos stores the point at which the cue ball was hit for proper cue stick retraction.
+	private int[] cuePos = { 261, 697 };
 
 	private boolean aiming = true;
 	private boolean placing = false;
 	private boolean pocketed = false;
 	private boolean scratch = true;
+	private boolean theBreak = true;
 
 	private BufferedImage table;
 	private BufferedImage bar;
 	private BufferedImage stick;
+	private BufferedImage arrows;
 
 	private Game m;
 	private CollisionDetector cd;
 
 	private ArrayList<Ball> balls = new ArrayList<Ball>();
+	private ArrayList<Ball> sbBalls = new ArrayList<Ball>();
 	private final Ball cueBall;
-	private final int[][] startPos = { { 261, 262 }, { 237, 216 }, { 261, 170 }, { 285, 216 }, { 211, 170 }, { 273, 239 },
-			{ 249, 193 }, { 261, 216 }, { 286, 170 }, { 225, 193 }, { 297, 193 }, { 273, 193 }, { 249, 239 },
-			{ 311, 170 }, { 236, 170 }, { 261, 697 } };
+	private final int[][] startPos = { { 261, 262 }, { 237, 216 }, { 261, 170 }, { 285, 216 }, { 211, 170 },
+			{ 273, 239 }, { 249, 193 }, { 261, 216 }, { 286, 170 }, { 225, 193 }, { 297, 193 }, { 273, 193 },
+			{ 249, 239 }, { 311, 170 }, { 236, 170 }, { 261, 697 } };
+	private final int[][] scoreboardPos = { { 677, 300 }, { 730, 300 }, { 677, 360 }, { 730, 360 }, { 677, 420 },
+			{ 730, 420 }, { 703, 480 }, { 703, 540 } };
 
 	public Pool() {
 		try {
 			table = ImageIO.read(new File("images/pooltable.png"));
 			bar = ImageIO.read(new File("images/cuebar.png"));
 			stick = ImageIO.read(new File("images/cuestick.png"));
+			arrows = ImageIO.read(new File("images/cuemove.png"));
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
@@ -67,12 +74,12 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 			} else
 				type = Ball.CUE;
 
-			balls.add(new Ball(startPos[i - 1][0], startPos[i - 1][1], type, path));
+			balls.add(new Ball(startPos[i - 1][0], startPos[i - 1][1], type, i, path));
 		}
 		cueBall = balls.get(15);
 		m = new EightBall(balls.toArray(new Ball[balls.size()]));
 		cd = new CollisionDetector();
-		//cueBall.setVel(new Vector2(0, -10));
+		// cueBall.setVel(new Vector2(0, -10));
 	}
 
 	public static void main(String[] args) {
@@ -86,95 +93,145 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 	public void paintComponent(Graphics g) {
 		super.paintComponent(g);
 		g.drawImage(table, 0, 0, null);
+		drawMessage(g);
 
 		if (placing) {
-			cueBall.setPos(mouseX, mouseY);
 			cuePos[0] = (int) mouseX;
 			cuePos[1] = (int) mouseY;
+			if (cuePos[0] <= 57)
+				cuePos[0] = 57;
+			else if (cuePos[0] >= 464)
+				cuePos[0] = 464;
+			if (cuePos[1] <= 59)
+				cuePos[1] = 59;
+			else if (cuePos[1] >= 900)
+				cuePos[1] = 900;
+			if (theBreak && cuePos[1] <= 697)
+				cuePos[1] = 697;
+			cueBall.setPos(cuePos[0], cuePos[1]);
 		}
 		for (Ball b : balls) {
 			if (!b.isInHole())
 				drawBall(b, g);
 		}
-		if (aiming)
+		drawScoreboardBalls(g);
+		if (aiming) {
+			if (scratch)
+				drawArrows(g);
 			drawCue(g);
-		else {
+		} else {
 			if (cuePos[1] - 30 - retractSpeed <= 960 * 2)
 				retractCue(g);
 			update();
 		}
-		
-		drawBar(g);
 
+		drawBar(g);
+		
 		timer.start();
 		lastX = mouseX;
 		lastY = mouseY;
 	}
 
 	private void update() {
-		updatePositions();
-		cd.manageCollisions(balls.toArray(new Ball[balls.size()]));
+		updateBalls();
+		cd.manageCollisions(balls);
 		for (int i = 0; i < balls.size(); i++) {
 			Ball b = balls.get(i);
 			if (b.isInHole()) {
 				int val = m.pocket(b);
-				if (val == Game.LEGAL) {
-					pocketed = true;
-				} else if (val == Game.SCRATCH) {
-					scratch = true;
-					pocketed = true;
-				} else if (val == Game.LOSE)
-					loss();
-				else
-					win();
-				balls.remove(i);
+				if (val != -1) {
+					if (val == Game.LEGAL) {
+						pocketed = true;
+					} else if (val == Game.SCRATCH) {
+						scratch = true;
+					}
+				}
+				if (b.getType() != Ball.CUE) {
+					balls.remove(i);
+					sbBalls.add(b);
+				}
 			}
 		}
 		if (m.ballsAtRest()) {
-			aiming = true;
-			if (!pocketed || scratch) {
-				m.nextTurn();
-			}
-			if (cueBall.isInHole()) {
-				cueBall.setInHole(false);
-				balls.add(cueBall);
-				cueBall.setPos(261, 697);
-			}
-			for (int i = 0; i < balls.size(); i++) {
-				Ball b = balls.get(i);
-				if (b.isInHole())
-					balls.remove(b);
+			if (m.getWinner() == 0) {
+				Ball firstHit = cd.getFirstHit();
+				int ballType = m.getBallType(m.getTurn());
+				if (ballType == 0) {
+					if (firstHit.getType() == Ball.EIGHT)
+						scratch = true;
+				} else {
+					if (firstHit == null || firstHit.getType() != ballType)
+						scratch = true;
+				}
+				cd.resetFirstHit();
+				
+				aiming = true;
+				if (!pocketed) {
+					m.nextTurn();
+					if (scratch) {
+						cuePos[0] = (int) cueBall.X();
+						cuePos[1] = (int) cueBall.Y();
+					}
+				}
+				if (cueBall.isInHole()) {
+					cueBall.setInHole(false);
+					cueBall.setPos(261, 697);
+				}
+				cuePos[0] = (int) cueBall.X();
+				cuePos[1] = (int) cueBall.Y();
+			} else {
+				timer.stop();
 			}
 		}
 	}
 
-	private void updatePositions() {
-		for (Ball ball : balls) {
-			ball.updatePos();
+	private void updateBalls() {
+		for (Ball b : balls) {
+			b.resetRealVelocity();
+			b.updatePos();
 		}
 	}
-
-	private void win() {
-		System.out.println("Player " + m.getTurn() + " won!");
-	}
-
-	private void loss() {
-		int player = m.getTurn() + 1;
-		if (player == 3)
-			player = 1;
-		System.out.println("Player " + player + " won!");
+	
+	private void drawMessage(Graphics g) {
+		g.setColor(Color.WHITE);
+		g.setFont(new Font("Roboto", Font.PLAIN, 56));
+		if (m.getWinner() == 0)
+			g.drawString("P" + m.getTurn() + "'s Turn", 670, 675);
+		else
+			g.drawString("P" + m.getWinner() + " WON!!!", 670, 675);
 	}
 
 	private void drawBall(Ball ball, Graphics g) {
 		g.drawImage(ball.getImg(), (int) (ball.X() - Ball.RADIUS), (int) (ball.Y() - Ball.RADIUS), 25, 25, null);
 	}
-	
+
+	private void drawScoreboardBalls(Graphics g) {
+		int p1Count = 0, p2Count = 0;
+		int size = 40;
+		for (Ball ball : sbBalls) {
+			if (ball.getType() == m.getBallType(1)) {
+				g.drawImage(ball.getImg(), scoreboardPos[p1Count][0], scoreboardPos[p1Count][1], size, size, null);
+				p1Count++;
+			} else if (ball.getType() == m.getBallType(2)) {
+				g.drawImage(ball.getImg(), scoreboardPos[p2Count][0] + 123, scoreboardPos[p2Count][1], size, size, null);
+				p2Count++;
+			} else {
+				int x = scoreboardPos[7][0];
+				int y = scoreboardPos[7][1];
+				if (m.getTurn() == 2)
+					x += 123;
+				g.drawImage(ball.getImg(), x, y, size, size, null);
+			}
+		}
+	}
+
 	private void hit() {
-		cuePos[0] = (int) cueBall.X();
-		cuePos[1] = (int) cueBall.Y();
-		double speed = Math.pow(retractSpeed / Ball.RADIUS, 2);
-		if (speed > Ball.RADIUS)
-			speed = Ball.RADIUS;
+		if (theBreak)
+			theBreak = false;
+
+		double speed = retractSpeed / 3.0;
+		if (speed > 15.0)
+			speed = 15.0;
 		double Vx = -speed * Math.cos(cueAngle);
 		double Vy = speed * Math.sin(cueAngle);
 		cueBall.setVel(new Vector2(Vx, Vy));
@@ -186,7 +243,7 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 		if (movingBar) {
 			barPos -= retractSpeed;
 			g.drawImage(bar, 551, barPos, 62, 511, null);
-			
+
 			if (barPos < 23) {
 				aiming = false;
 				hit();
@@ -198,6 +255,10 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 		} else {
 			g.drawImage(bar, 551, 23, 62, 511, null);
 		}
+	}
+	
+	private void drawArrows(Graphics g) {
+		g.drawImage(arrows, cuePos[0] - 25, cuePos[1] - 25, 50, 50, null);
 	}
 
 	private void drawCue(Graphics g) {
@@ -217,59 +278,117 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 		g2d.drawImage(stick, (int) (cueBall.X() - 23), (int) (cueBall.Y() - 30 + offset), 45, 547, null);
 		g2d.setTransform(og);
 	}
-	
+
 	private void drawLine(Graphics2D g2d) {
 		g2d.setStroke(new BasicStroke(2));
 		g2d.setColor(Color.WHITE);
 		double angle = Math.PI - cueAngle;
-		double startX = cueBall.X() + ((Ball.RADIUS + 4) * Math.cos(angle));
-		double startY = cueBall.Y() + ((Ball.RADIUS + 4) * Math.sin(angle));
-		//getting equation of the line ax+by+c=0
-		double a = -Math.tan(cueAngle);
-		double b = 1.0;
-		double c = Math.tan(cueAngle) * cueBall.X() - cueBall.Y();
+		angle -= Math.floor((angle + Math.PI) / (2 * Math.PI)) * 2 * Math.PI;
+		double dx = Math.cos(angle);
+		double dy = Math.sin(angle);
+		int startX = (int) (cueBall.X() + (Ball.RADIUS * dx));
+		int startY = (int) (cueBall.Y() + ((Ball.RADIUS - 1) * dy));
+		
+		// distance between point and ray: P-(B+tM)
+		Vector2 B = new Vector2(startX, startY);
+		Vector2 M = new Vector2(dx, dy);
 		Ball willHit = null;
 		double minDist = -1;
+
 		for (Ball ball : balls) {
-			double bDistX = Math.abs(ball.X() - cueBall.X());
-			if (ball.getType() != Ball.CUE && Math.signum(cueAngle) != Math.signum(bDistX)) {
-				//formula for distance between a point and a line squared
-				double dist = Math.pow(a * ball.X() + b * ball.Y() + c, 2) / (a * a + b * b);
-				if (dist < 4 * Ball.RADIUS * Ball.RADIUS) {
-					if (minDist == -1 || dist < minDist) {
-						minDist = dist;
-					}
-					if (willHit == null)
-						willHit = ball;
-					else {
-						double dist1 = distSquared(ball.X(), ball.Y(), cueBall.X(), cueBall.Y());
-						double dist2 = distSquared(willHit.X(), willHit.Y(), cueBall.X(), cueBall.Y());
-						if (dist1 < dist2)
+			if (ball.getType() != Ball.CUE) {
+				Vector2 P = new Vector2(ball.X(), ball.Y());
+				// formula for distance between a point and a line squared
+				double t = M.dot(P.subtract(B)) / M.dot(M);
+				if (t >= 0) {
+					double dist = P.subtract(B.add(M.multiply(t))).magSquared();
+					if (dist <= 4 * Ball.RADIUS * Ball.RADIUS) {
+						if (willHit == null) {
 							willHit = ball;
+							minDist = dist;
+						} else {
+							double dist1 = distSquared(ball.X(), ball.Y(), cueBall.X(), cueBall.Y());
+							double dist2 = distSquared(willHit.X(), willHit.Y(), cueBall.X(), cueBall.Y());
+							if (dist1 < dist2) {
+								willHit = ball;
+								minDist = dist;
+							}
+						}
 					}
 				}
 			}
 		}
+		if (willHit == null) {
+			drawWallGuidelines(g2d, angle, startX, startY);
+		} else {
+			drawBallGuidelines(g2d, angle, startX, startY, minDist, willHit);
+		}
+	}
+	
+	private void drawWallGuidelines(Graphics2D g2d, double angle, int startX, int startY) {
 		double length;
-		if (willHit == null)
-			length = 1;
-		else {
-			//determine where to put the white circle
-			double z1 = distSquared(cueBall.X(), cueBall.Y(), willHit.X(), willHit.Y());
-			double y = minDist;
-			double x1 = Math.sqrt(z1 - y);
-			
-			double z2 = 4 * Ball.RADIUS * Ball.RADIUS;
-			double x2 = Math.sqrt(z2 - y);
-			
-			length = x1 - x2;
+		double y;
+		if (angle <= 0.0 && angle >= -Math.PI)
+			y = cueBall.Y() - 59;
+		else
+			y = cueBall.Y() - 900;
+		double x = -y / Math.tan(angle);
+		if (cueBall.X() + x > 465) {
+			x = 465 - cueBall.X();
+			length = x / Math.cos(angle);
+		} else if (cueBall.X() + x < 57) {
+			x = 57 - cueBall.X();
+			length = x / Math.cos(angle);
+		} else {
+			length = -y / Math.sin(angle);
 		}
 		int circleX = (int) (cueBall.X() + (length * Math.cos(angle)));
 		int circleY = (int) (cueBall.Y() + (length * Math.sin(angle)));
-		g2d.drawOval(circleX - 11, circleY - 11, 22, 22);
-		g2d.drawLine((int) startX, (int) startY, circleX, (int) circleY); 
+		g2d.drawOval(circleX - Ball.RADIUS, circleY - Ball.RADIUS, 2 * Ball.RADIUS, 2 * Ball.RADIUS);
+		if (distSquared(cueBall.X(), cueBall.Y(), circleX, circleY) > Ball.RADIUS * Ball.RADIUS) {
+			g2d.drawLine(startX, startY, circleX - (int) ((Ball.RADIUS + 1) * Math.cos(angle)),
+				circleY - (int) ((Ball.RADIUS + 1) * Math.sin(angle)));
+		}
 	}
 	
+	private void drawBallGuidelines(Graphics2D g2d, double angle, int startX, int startY, double minDist, Ball willHit) {
+		// determine where to put the white circle
+		double z1 = distSquared(cueBall.X(), cueBall.Y(), willHit.X(), willHit.Y());
+		double y = minDist;
+		double x1 = Math.sqrt(z1 - y);
+		double z2 = 4 * Ball.RADIUS * Ball.RADIUS;
+		double x2 = Math.sqrt(z2 - y);
+
+		double length = x1 - x2;
+		int circleX = (int) (cueBall.X() + (length * Math.cos(angle)));
+		int circleY = (int) (cueBall.Y() + (length * Math.sin(angle)));
+		
+		Vector2 direction = new Vector2(willHit.X() - circleX, willHit.Y() - circleY);
+		double whAngle = Math.atan2(direction.J(), direction.I());
+		double dAngle = angle - whAngle;
+		if (dAngle <= -Math.PI / 2)
+			dAngle += (2 * Math.PI);
+		else if (dAngle >= Math.PI / 2)
+			dAngle -= (2 * Math.PI);
+		//System.out.println(angle + " - " + whAngle + " = " + dAngle);
+		double whLength = 120 * ((Math.PI / 2 - Math.abs(dAngle)) / (Math.PI / 2));
+		double dLength = 120 - whLength;
+		
+		dLength += (Ball.RADIUS + 1);
+		g2d.drawLine(circleX + (int) ((Ball.RADIUS + 1) * Math.cos(whAngle)),
+				circleY + (int) ((Ball.RADIUS + 1) * Math.sin(whAngle)),
+				circleX + (int) (whLength * Math.cos(whAngle)), circleY + (int) (whLength * Math.sin(whAngle)));
+		double cAngle = whAngle + Math.signum(dAngle) * Math.PI / 2;
+		g2d.drawLine(circleX + (int) ((Ball.RADIUS + 1) * Math.cos(cAngle)),
+				circleY + (int) ((Ball.RADIUS + 1) * Math.sin(cAngle)),
+				circleX + (int) (dLength * Math.cos(cAngle)), circleY + (int) (dLength * Math.sin(cAngle)));
+		g2d.drawOval(circleX - Ball.RADIUS, circleY - Ball.RADIUS, 2 * Ball.RADIUS, 2 * Ball.RADIUS);
+		if (distSquared(cueBall.X(), cueBall.Y(), circleX, circleY) > Ball.RADIUS * Ball.RADIUS) {
+			g2d.drawLine(startX, startY, circleX - (int) ((Ball.RADIUS + 1) * Math.cos(angle)),
+				circleY - (int) ((Ball.RADIUS + 1) * Math.sin(angle)));
+		}
+	}
+
 	private void retractCue(Graphics g) {
 		Graphics2D g2d = (Graphics2D) g;
 		AffineTransform og = g2d.getTransform();
@@ -285,7 +404,7 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 		}
 		g2d.setTransform(og);
 	}
-	
+
 	private double calculateAngle(int x, int y) {
 		double angle;
 		if (x == cueBall.X()) {
@@ -300,7 +419,7 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 		}
 		return angle;
 	}
-	
+
 	private double distSquared(double x1, double y1, double x2, double y2) {
 		return (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
 	}
@@ -338,7 +457,7 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 			double dY = mouseY - cueBall.Y();
 			if ((dX * dX + dY * dY) <= Ball.RADIUS * Ball.RADIUS)
 				placing = true;
-		} 
+		}
 		if (aiming && !movingBar) {
 			if (mouseX >= 550 && mouseX <= 612 && mouseY >= barPos && mouseY <= barPos + 511) {
 				clickedY = e.getY();

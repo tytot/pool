@@ -5,28 +5,38 @@ public class EightBall extends Game {
 	}
 	
 	public int pocket(Ball ball) {
-		if (getP1Balls() == 0) {
+		int ballType = ball.getType();
+		if (getBallType(1) == 0 && (ballType == Ball.SOLID || ballType == Ball.STRIPES)) {
 			setBallTypes(ball);
 		}
-		if (ball.getType() == getP1Type()) {
-			addP1Ball();
-			return LEGAL;
-		} else if (ball.getType() == getP2Type()) {
-			addP2Ball();
-			return LEGAL;
-		} else if (ball.getType() == Ball.CUE) {
+		if (ballType == getBallType(1)) {
+			addBall(1);
+			if (getTurn() == 1)
+				return LEGAL;
+			return -1;
+		} else if (ballType == getBallType(2)) {
+			addBall(2);
+			if (getTurn() == 2)
+				return LEGAL;
+			return -1;
+		} else if (ballType == Ball.CUE) {
 			return SCRATCH;
 		} else {
-			if (playerWon(getTurn()))
-				return WIN;
-			return LOSE;
+			int turn = getTurn();
+			if (playerWon(turn))
+				setWinner(turn);
+			else {
+				turn++;
+				if (turn == 3)
+					turn = 1;
+				setWinner(turn);
+			}
+			return -1;
 		}
 	}
 	
 	public boolean playerWon(int player) {
-		if (player == 1 && getP1Balls() == 7)
-			return true;
-		if (player == 2 && getP2Balls() == 7)
+		if (getBallCount(player) == 7)
 			return true;
 		return false;
 	}
