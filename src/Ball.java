@@ -6,13 +6,14 @@ import javax.imageio.ImageIO;
 
 public class Ball {
 	private double x, y;
-	private final int type;
+	private int type;
 	private final int number;
 	public static final int SOLID = 1;
 	public static final int STRIPES = 2;
 	public static final int CUE = 3;
 	public static final int EIGHT = 4;
 	public static final int RADIUS = 12;
+	public static final int DIAMETER = RADIUS * 2;
 	private static final double FRICTION = 0.995;
 
 	private Image img;
@@ -50,6 +51,10 @@ public class Ball {
 		return type;
 	}
 	
+	public void setType(int type) {
+		this.type = type;
+	}
+	
 	public int getNumber() {
 		return number;
 	}
@@ -63,10 +68,6 @@ public class Ball {
 	}
 
 	public void setInHole(boolean inHole) {
-		if (inHole) {
-			x = 0.0;
-			y = 0.0;
-		}
 		this.inHole = inHole;
 	}
 

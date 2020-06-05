@@ -1,4 +1,3 @@
-
 public class Vector2 {
 	private double i = 0;
 	private double j = 0;
@@ -42,11 +41,11 @@ public class Vector2 {
 	public Vector2 subtract(Vector2 other) {
 		return new Vector2(i - other.I(), j - other.J());
 	}
-	
+
 	public Vector2 normalize() {
 		if (magSquared() == 0.0)
 			return new Vector2(0.0, 0.0);
-		
+
 		double newI = i / Math.sqrt(magSquared());
 		double newJ = j / Math.sqrt(magSquared());
 		return new Vector2(newI, newJ);

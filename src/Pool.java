@@ -7,33 +7,28 @@ import java.io.IOException;
 import java.util.ArrayList;
 
 import javax.imageio.ImageIO;
+import javax.sound.sampled.*;
 import javax.swing.*;
 
 public class Pool extends JPanel implements ActionListener, MouseListener, MouseMotionListener {
 	private Timer timer = new Timer(5, this);
-	private int mouseX = 261;
-	private int mouseY = 698;
-	private int lastX = 261;
-	private int lastY = 698;
+	private int mouseX = 261, mouseY = 698;
+	private int lastX = 261, lastY = 698;
 
 	private int barPos = 23;
 	private int clickedY = 0;
 	private boolean movingBar = false;
 	private int retractSpeed = 0;
 	private double cueAngle = Math.toRadians(-90);
-	//cuePos stores the point at which the cue ball was hit for proper cue stick retraction.
+	// cuePos stores the point at which the cue ball was hit for proper cue stick
+	// retraction.
 	private int[] cuePos = { 261, 697 };
 
-	private boolean aiming = true;
-	private boolean placing = false;
-	private boolean pocketed = false;
-	private boolean scratch = true;
-	private boolean theBreak = true;
+	private boolean aiming = true, placing = false, validated = false;
 
-	private BufferedImage table;
-	private BufferedImage bar;
-	private BufferedImage stick;
-	private BufferedImage arrows;
+	private BufferedImage table, bar, stick, arrows, calls;
+	private Clip cueSFX;
+	private boolean[] highlightedPockets = { false, false, false, false, false, false };
 
 	private Game m;
 	private CollisionDetector cd;
@@ -45,49 +40,79 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 			{ 273, 239 }, { 249, 193 }, { 261, 216 }, { 286, 170 }, { 225, 193 }, { 297, 193 }, { 273, 193 },
 			{ 249, 239 }, { 311, 170 }, { 236, 170 }, { 261, 697 } };
 	private final int[][] scoreboardPos = { { 677, 300 }, { 730, 300 }, { 677, 360 }, { 730, 360 }, { 677, 420 },
-			{ 730, 420 }, { 703, 480 }, { 703, 540 } };
+			{ 730, 420 }, { 677, 480 }, { 730, 480 }, { 703, 540 } };
 
-	public Pool() {
+	public Pool(Game game) {
+		m = game;
+		cd = new CollisionDetector();
+
 		try {
 			table = ImageIO.read(new File("images/pooltable.png"));
 			bar = ImageIO.read(new File("images/cuebar.png"));
 			stick = ImageIO.read(new File("images/cuestick.png"));
 			arrows = ImageIO.read(new File("images/cuemove.png"));
-		} catch (IOException e) {
+			calls = ImageIO.read(new File("images/calls.png"));
+			
+			AudioInputStream audioIn = AudioSystem.getAudioInputStream(new File("sfx/cue.wav"));
+			cueSFX = AudioSystem.getClip();
+			cueSFX.open(audioIn);
+		} catch (Exception e) {
 			e.printStackTrace();
 		}
 
-		for (int i = 1; i <= 16; i++) {
+		int[] ballIndices = m.getBallIndices();
+		int length = ballIndices.length;
+		for (int i = 0; i < length; i++) {
+			int ball = i + 1;
 			String path = "images/balls/";
-			if (i < 16)
-				path += i + ".png";
+			if (ball < length)
+				path += ball + ".png";
 			else
 				path += "cue.png";
 
 			int type;
-			if (i < 8) {
-				type = Ball.SOLID;
-			} else if (i == 8) {
-				type = Ball.EIGHT;
-			} else if (i < 16) {
-				type = Ball.STRIPES;
-			} else
+			if (ball == length) {
 				type = Ball.CUE;
+			} else if (length == 16) {
+				if (ball < 8) {
+					type = Ball.SOLID;
+				} else if (ball == 8) {
+					type = Ball.EIGHT;
+				} else {
+					type = Ball.STRIPES;
+				}
+			} else {
+				type = Ball.SOLID;
+			}
 
-			balls.add(new Ball(startPos[i - 1][0], startPos[i - 1][1], type, i, path));
+			balls.add(new Ball(startPos[ballIndices[i]][0], startPos[ballIndices[i]][1], type, ball, path));
 		}
-		cueBall = balls.get(15);
-		m = new EightBall(balls.toArray(new Ball[balls.size()]));
-		cd = new CollisionDetector();
-		// cueBall.setVel(new Vector2(0, -10));
+		cueBall = balls.get(length - 1);
 	}
 
-	public static void main(String[] args) {
-		SwingUtilities.invokeLater(new Runnable() {
-			public void run() {
-				createTable();
-			}
-		});
+	public static void createTable(int gamemode) {
+		Game game;
+		if (gamemode == 1)
+			game = new EightBall();
+		else if (gamemode == 2)
+			game = new NineBall();
+		else
+			game = new TenBall();
+		Pool pool = new Pool(game);
+		pool.addMouseListener(pool);
+		pool.addMouseMotionListener(pool);
+
+		JFrame frame = new JFrame("Pool");
+		frame.add(pool);
+		frame.pack();
+		frame.setVisible(true);
+	}
+
+	@Override
+	public Dimension getPreferredSize() {
+		int width = table.getWidth();
+		int height = table.getHeight();
+		return new Dimension(width, height);
 	}
 
 	public void paintComponent(Graphics g) {
@@ -106,27 +131,38 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 				cuePos[1] = 59;
 			else if (cuePos[1] >= 900)
 				cuePos[1] = 900;
-			if (theBreak && cuePos[1] <= 697)
+			if (m.isBreaking() && cuePos[1] <= 697)
 				cuePos[1] = 697;
+
 			cueBall.setPos(cuePos[0], cuePos[1]);
 		}
 		for (Ball b : balls) {
 			if (!b.isInHole())
 				drawBall(b, g);
 		}
+
 		drawScoreboardBalls(g);
 		if (aiming) {
-			if (scratch)
+			if (m.toCall(m.getTurn()))
+				g.drawImage(calls, 0, 0, null);
+			else if (m.getCalledPocket() != 0) {
+				highlightPocket(m.getCalledPocket(), g);
+			}
+			if (m.scratch())
 				drawArrows(g);
 			drawCue(g);
 		} else {
 			if (cuePos[1] - 30 - retractSpeed <= 960 * 2)
 				retractCue(g);
+			for (int i = 0; i < 6; i++) {
+				if (highlightedPockets[i])
+					highlightPocket(i + 1, g);
+			}
 			update();
 		}
 
 		drawBar(g);
-		
+
 		timer.start();
 		lastX = mouseX;
 		lastY = mouseY;
@@ -135,40 +171,41 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 	private void update() {
 		updateBalls();
 		cd.manageCollisions(balls);
+		Ball firstHit = cd.getFirstHit();
+		if (!validated && firstHit != null) {
+			if (!m.validateFirstHit(firstHit)) {
+				m.setScratch(true);
+			}
+			validated = true;
+		}
 		for (int i = 0; i < balls.size(); i++) {
 			Ball b = balls.get(i);
 			if (b.isInHole()) {
-				int val = m.pocket(b);
-				if (val != -1) {
-					if (val == Game.LEGAL) {
-						pocketed = true;
-					} else if (val == Game.SCRATCH) {
-						scratch = true;
-					}
-				}
-				if (b.getType() != Ball.CUE) {
+				boolean legal = m.processPocket(b);
+				int pocketNum = m.getPocketNumber((int) b.X(), (int) b.Y());
+				highlightedPockets[pocketNum - 1] = true;
+				if (legal) {
 					balls.remove(i);
 					sbBalls.add(b);
 				}
 			}
 		}
-		if (m.ballsAtRest()) {
+		if (ballsAtRest()) {
 			if (m.getWinner() == 0) {
-				Ball firstHit = cd.getFirstHit();
-				int ballType = m.getBallType(m.getTurn());
-				if (ballType == 0) {
-					if (firstHit.getType() == Ball.EIGHT)
-						scratch = true;
-				} else {
-					if (firstHit == null || firstHit.getType() != ballType)
-						scratch = true;
-				}
 				cd.resetFirstHit();
-				
+				if (!validated)
+					m.setScratch(true);
+				else
+					validated = false;
+				m.setCalledPocket(0);
+
 				aiming = true;
-				if (!pocketed) {
+				if (m.scratch())
+					m.setPocketed(false);
+
+				if (!m.pocketed()) {
 					m.nextTurn();
-					if (scratch) {
+					if (m.scratch()) {
 						cuePos[0] = (int) cueBall.X();
 						cuePos[1] = (int) cueBall.Y();
 					}
@@ -179,8 +216,31 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 				}
 				cuePos[0] = (int) cueBall.X();
 				cuePos[1] = (int) cueBall.Y();
+
+				Ball toRespot = m.toRespot();
+				if (toRespot != null) {
+					System.out.println("respot");
+					respot(toRespot);
+					m.setToRespot(null);
+				}
+				resetHighlightedPockets();
 			} else {
 				timer.stop();
+			}
+		}
+	}
+
+	private void respot(Ball toRespot) {
+		toRespot.setInHole(false);
+		toRespot.setPos(startPos[0][0], startPos[0][1]);
+		for (Ball b : balls) {
+			if (b != toRespot) {
+				if (distSquared(b.X(), b.Y(), toRespot.X(), toRespot.Y()) < Ball.DIAMETER * Ball.DIAMETER) {
+					double relAngle = Math.atan2(toRespot.Y() - b.Y(), toRespot.X() - b.X());
+					double newX = b.X() + ((Ball.DIAMETER + 1) * Math.cos(relAngle));
+					double newY = b.Y() + ((Ball.DIAMETER + 1) * Math.sin(relAngle));
+					toRespot.setPos(newX, newY);
+				}
 			}
 		}
 	}
@@ -191,14 +251,73 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 			b.updatePos();
 		}
 	}
-	
+
+	public boolean ballsAtRest() {
+		for (Ball b : balls) {
+			if (!b.isInHole() && (Math.abs(b.velocity().I()) >= 0.05 || Math.abs(b.velocity().J()) >= 0.05))
+				return false;
+		}
+		for (Ball b : balls) {
+			b.setVel(new Vector2(0, 0));
+		}
+		return true;
+	}
+
+	private void hit() {
+		playSound(cueSFX);
+		double speed;
+		if (m.isBreaking()) {
+			speed = retractSpeed / 3.0;
+			if (speed > 15.0)
+				speed = 15.0;
+			m.endBreak();
+		} else {
+			speed = retractSpeed / 4.0;
+		}
+		double Vx = -speed * Math.cos(cueAngle);
+		double Vy = speed * Math.sin(cueAngle);
+		cueBall.setVel(new Vector2(Vx, Vy));
+		m.setPocketed(false);
+		m.setScratch(false);
+	}
+
+	public static void playSound(Clip clip) {
+		try {
+			clip.start();
+			clip.addLineListener(new LineListener() {
+				public void update(LineEvent event) {
+					if (event.getType() == LineEvent.Type.STOP) {
+						clip.stop();
+						clip.setFramePosition(0);
+					}
+				}
+			});
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
 	private void drawMessage(Graphics g) {
 		g.setColor(Color.WHITE);
 		g.setFont(new Font("Roboto", Font.PLAIN, 56));
-		if (m.getWinner() == 0)
-			g.drawString("P" + m.getTurn() + "'s Turn", 670, 675);
-		else
-			g.drawString("P" + m.getWinner() + " WON!!!", 670, 675);
+		int turn = m.getTurn();
+		if (m.getWinner() == 0) {
+			g.drawString("P" + turn + "'s Turn", 670, 675);
+		} else
+			g.drawString("P" + m.getWinner() + " WON!!!", 660, 675);
+
+		g.setFont(new Font("Roboto", Font.ITALIC, 32));
+		if (aiming) {
+			if (m.isBreaking())
+				g.drawString("BREAK", 730, 730);
+			else if (m.toCall(turn))
+				g.drawString("CALL YOUR SHOT", 655, 730);
+			else if (m.scratch())
+				g.drawString("BALL IN HAND", 680, 730);
+		} else {
+			if (m.scratch())
+				g.drawString("SCRATCH", 715, 730);
+		}
 	}
 
 	private void drawBall(Ball ball, Graphics g) {
@@ -213,7 +332,8 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 				g.drawImage(ball.getImg(), scoreboardPos[p1Count][0], scoreboardPos[p1Count][1], size, size, null);
 				p1Count++;
 			} else if (ball.getType() == m.getBallType(2)) {
-				g.drawImage(ball.getImg(), scoreboardPos[p2Count][0] + 123, scoreboardPos[p2Count][1], size, size, null);
+				g.drawImage(ball.getImg(), scoreboardPos[p2Count][0] + 123, scoreboardPos[p2Count][1], size, size,
+						null);
 				p2Count++;
 			} else {
 				int x = scoreboardPos[7][0];
@@ -225,18 +345,12 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 		}
 	}
 
-	private void hit() {
-		if (theBreak)
-			theBreak = false;
-
-		double speed = retractSpeed / 3.0;
-		if (speed > 15.0)
-			speed = 15.0;
-		double Vx = -speed * Math.cos(cueAngle);
-		double Vy = speed * Math.sin(cueAngle);
-		cueBall.setVel(new Vector2(Vx, Vy));
-		pocketed = false;
-		scratch = false;
+	private void highlightPocket(int pocket, Graphics g) {
+		int startX = 262 * (pocket / 4);
+		int endX = startX + 262;
+		int startY = 360 * ((pocket - 1) % 3);
+		int endY = startY + 360;
+		g.drawImage(calls, startX, startY, endX, endY, startX, startY, endX, endY, null);
 	}
 
 	private void drawBar(Graphics g) {
@@ -256,7 +370,7 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 			g.drawImage(bar, 551, 23, 62, 511, null);
 		}
 	}
-	
+
 	private void drawArrows(Graphics g) {
 		g.drawImage(arrows, cuePos[0] - 25, cuePos[1] - 25, 50, 50, null);
 	}
@@ -288,7 +402,7 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 		double dy = Math.sin(angle);
 		int startX = (int) (cueBall.X() + (Ball.RADIUS * dx));
 		int startY = (int) (cueBall.Y() + ((Ball.RADIUS - 1) * dy));
-		
+
 		// distance between point and ray: P-(B+tM)
 		Vector2 B = new Vector2(startX, startY);
 		Vector2 M = new Vector2(dx, dy);
@@ -302,7 +416,7 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 				double t = M.dot(P.subtract(B)) / M.dot(M);
 				if (t >= 0) {
 					double dist = P.subtract(B.add(M.multiply(t))).magSquared();
-					if (dist <= 4 * Ball.RADIUS * Ball.RADIUS) {
+					if (dist <= Ball.DIAMETER * Ball.DIAMETER) {
 						if (willHit == null) {
 							willHit = ball;
 							minDist = dist;
@@ -324,7 +438,7 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 			drawBallGuidelines(g2d, angle, startX, startY, minDist, willHit);
 		}
 	}
-	
+
 	private void drawWallGuidelines(Graphics2D g2d, double angle, int startX, int startY) {
 		double length;
 		double y;
@@ -344,25 +458,26 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 		}
 		int circleX = (int) (cueBall.X() + (length * Math.cos(angle)));
 		int circleY = (int) (cueBall.Y() + (length * Math.sin(angle)));
-		g2d.drawOval(circleX - Ball.RADIUS, circleY - Ball.RADIUS, 2 * Ball.RADIUS, 2 * Ball.RADIUS);
+		g2d.drawOval(circleX - Ball.RADIUS, circleY - Ball.RADIUS, Ball.DIAMETER, Ball.DIAMETER);
 		if (distSquared(cueBall.X(), cueBall.Y(), circleX, circleY) > Ball.RADIUS * Ball.RADIUS) {
 			g2d.drawLine(startX, startY, circleX - (int) ((Ball.RADIUS + 1) * Math.cos(angle)),
-				circleY - (int) ((Ball.RADIUS + 1) * Math.sin(angle)));
+					circleY - (int) ((Ball.RADIUS + 1) * Math.sin(angle)));
 		}
 	}
-	
-	private void drawBallGuidelines(Graphics2D g2d, double angle, int startX, int startY, double minDist, Ball willHit) {
+
+	private void drawBallGuidelines(Graphics2D g2d, double angle, int startX, int startY, double minDist,
+			Ball willHit) {
 		// determine where to put the white circle
 		double z1 = distSquared(cueBall.X(), cueBall.Y(), willHit.X(), willHit.Y());
 		double y = minDist;
 		double x1 = Math.sqrt(z1 - y);
-		double z2 = 4 * Ball.RADIUS * Ball.RADIUS;
+		double z2 = Ball.DIAMETER * Ball.DIAMETER;
 		double x2 = Math.sqrt(z2 - y);
 
 		double length = x1 - x2;
 		int circleX = (int) (cueBall.X() + (length * Math.cos(angle)));
 		int circleY = (int) (cueBall.Y() + (length * Math.sin(angle)));
-		
+
 		Vector2 direction = new Vector2(willHit.X() - circleX, willHit.Y() - circleY);
 		double whAngle = Math.atan2(direction.J(), direction.I());
 		double dAngle = angle - whAngle;
@@ -370,22 +485,22 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 			dAngle += (2 * Math.PI);
 		else if (dAngle >= Math.PI / 2)
 			dAngle -= (2 * Math.PI);
-		//System.out.println(angle + " - " + whAngle + " = " + dAngle);
+		// System.out.println(angle + " - " + whAngle + " = " + dAngle);
 		double whLength = 120 * ((Math.PI / 2 - Math.abs(dAngle)) / (Math.PI / 2));
 		double dLength = 120 - whLength;
-		
+
 		dLength += (Ball.RADIUS + 1);
 		g2d.drawLine(circleX + (int) ((Ball.RADIUS + 1) * Math.cos(whAngle)),
-				circleY + (int) ((Ball.RADIUS + 1) * Math.sin(whAngle)),
-				circleX + (int) (whLength * Math.cos(whAngle)), circleY + (int) (whLength * Math.sin(whAngle)));
+				circleY + (int) ((Ball.RADIUS + 1) * Math.sin(whAngle)), circleX + (int) (whLength * Math.cos(whAngle)),
+				circleY + (int) (whLength * Math.sin(whAngle)));
 		double cAngle = whAngle + Math.signum(dAngle) * Math.PI / 2;
 		g2d.drawLine(circleX + (int) ((Ball.RADIUS + 1) * Math.cos(cAngle)),
-				circleY + (int) ((Ball.RADIUS + 1) * Math.sin(cAngle)),
-				circleX + (int) (dLength * Math.cos(cAngle)), circleY + (int) (dLength * Math.sin(cAngle)));
-		g2d.drawOval(circleX - Ball.RADIUS, circleY - Ball.RADIUS, 2 * Ball.RADIUS, 2 * Ball.RADIUS);
+				circleY + (int) ((Ball.RADIUS + 1) * Math.sin(cAngle)), circleX + (int) (dLength * Math.cos(cAngle)),
+				circleY + (int) (dLength * Math.sin(cAngle)));
+		g2d.drawOval(circleX - Ball.RADIUS, circleY - Ball.RADIUS, Ball.DIAMETER, Ball.DIAMETER);
 		if (distSquared(cueBall.X(), cueBall.Y(), circleX, circleY) > Ball.RADIUS * Ball.RADIUS) {
 			g2d.drawLine(startX, startY, circleX - (int) ((Ball.RADIUS + 1) * Math.cos(angle)),
-				circleY - (int) ((Ball.RADIUS + 1) * Math.sin(angle)));
+					circleY - (int) ((Ball.RADIUS + 1) * Math.sin(angle)));
 		}
 	}
 
@@ -420,6 +535,12 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 		return angle;
 	}
 
+	private void resetHighlightedPockets() {
+		for (int i = 0; i < 6; i++) {
+			highlightedPockets[i] = false;
+		}
+	}
+
 	private double distSquared(double x1, double y1, double x2, double y2) {
 		return (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
 	}
@@ -428,31 +549,12 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 		repaint();
 	}
 
-	@Override
-	public Dimension getPreferredSize() {
-		int width = table.getWidth();
-		int height = table.getHeight();
-		return new Dimension(width, height);
-	}
-
-	private static void createTable() {
-		Pool pool = new Pool();
-		pool.addMouseListener(pool);
-		pool.addMouseMotionListener(pool);
-
-		JFrame frame = new JFrame("Pool");
-		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		frame.add(pool);
-		frame.pack();
-		frame.setVisible(true);
-	}
-
 	public void mousePressed(MouseEvent e) {
 		mouseX = e.getX();
 		mouseY = e.getY();
 		lastX = mouseX;
 		lastY = mouseY;
-		if (!placing && scratch) {
+		if (!placing && m.scratch()) {
 			double dX = mouseX - cueBall.X();
 			double dY = mouseY - cueBall.Y();
 			if ((dX * dX + dY * dY) <= Ball.RADIUS * Ball.RADIUS)
@@ -481,12 +583,32 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 
 	@Override
 	public void mouseClicked(MouseEvent e) {
+		if (aiming && m.toCall(m.getTurn())) {
+			int x = e.getX();
+			int y = e.getY();
+			Color c = new Color(calls.getRGB(x, y));
+			if (c.getGreen() == 148) {
+				m.setCalledPocket(m.getPocketNumber(x, y));
+			}
+		}
 	}
 
 	@Override
 	public void mouseReleased(MouseEvent e) {
-		if (placing)
+		if (placing) {
+			for (Ball b : balls) {
+				if (b.getType() != Ball.CUE) {
+					if (distSquared(b.X(), b.Y(), cuePos[0], cuePos[1]) < Ball.DIAMETER * Ball.DIAMETER) {
+						double relAngle = Math.atan2(cuePos[1] - b.Y(), cuePos[0] - b.X());
+						cuePos[0] = (int) (b.X() + ((Ball.DIAMETER + 1) * Math.cos(relAngle)));
+						cuePos[1] = (int) (b.Y() + ((Ball.DIAMETER + 1) * Math.sin(relAngle)));
+					}
+				}
+			}
+			cueBall.setPos(cuePos[0], cuePos[1]);
 			placing = false;
+		}
+
 		if (movingBar) {
 			if (barPos - 23 > 10) {
 				retractSpeed = (barPos - 23) / 8;

@@ -26,8 +26,6 @@ public class Collision {
 		Vector2 v1f = b1Vel.subtract(change).multiply(RESTITUTION);
 		Vector2 v2f = b2Vel.add(change).multiply(RESTITUTION);
 		Vector2[] output = { v1f, v2f };
-//		System.out.println("before: " + b1.velocity() + " " + b2.velocity());
-//		System.out.println("after: " + v1f + " " + v2f);
 		return output;
 	}
 
