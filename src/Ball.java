@@ -28,7 +28,7 @@ public class Ball {
 		this.number = number;
 		this.inHole = false;
 		try {
-			img = ImageIO.read(new File(imgPath));
+			img = ImageIO.read(getClass().getResource(imgPath));
 		} catch (IOException e) {
 			e.printStackTrace();
 		}

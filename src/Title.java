@@ -15,14 +15,18 @@ public class Title extends JPanel implements ActionListener, MouseListener {
 	private BufferedImage titleScreen;
 	private BufferedImage[] selected = new BufferedImage[3];
 
+	private Dimension size;
+
 	private int gamemode = 0;
 
 	public Title() {
 		try {
-			titleScreen = ImageIO.read(new File("images/title/titlescreen.jpg"));
-			selected[0] = ImageIO.read(new File("images/title/select1.png"));
-			selected[1] = ImageIO.read(new File("images/title/select2.png"));
-			selected[2] = ImageIO.read(new File("images/title/select3.png"));
+			titleScreen = ImageIO.read(getClass().getResource("images/title/titlescreen.jpg"));
+			selected[0] = ImageIO.read(getClass().getResource("images/title/select1.png"));
+			selected[1] = ImageIO.read(getClass().getResource("images/title/select2.png"));
+			selected[2] = ImageIO.read(getClass().getResource("images/title/select3.png"));
+
+			size = new Dimension(titleScreen.getWidth(), titleScreen.getHeight());
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
@@ -39,9 +43,14 @@ public class Title extends JPanel implements ActionListener, MouseListener {
 	private static void showMenu() {
 		Title title = new Title();
 		title.addMouseListener(title);
+		Dimension size = title.getPreferredSize();
 
 		JFrame frame = new JFrame("Pool");
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		frame.setResizable(false);
+		frame.setPreferredSize(size);
+		frame.setMinimumSize(size);
+		frame.setMaximumSize(size);
 		frame.add(title);
 		frame.pack();
 		frame.setVisible(true);
@@ -49,9 +58,7 @@ public class Title extends JPanel implements ActionListener, MouseListener {
 
 	@Override
 	public Dimension getPreferredSize() {
-		int width = titleScreen.getWidth();
-		int height = titleScreen.getHeight();
-		return new Dimension(width, height);
+		return size;
 	}
 
 	public void paintComponent(Graphics g) {

@@ -30,6 +30,8 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 	private Clip cueSFX;
 	private boolean[] highlightedPockets = { false, false, false, false, false, false };
 
+	private Dimension size;
+
 	private Game m;
 	private CollisionDetector cd;
 
@@ -47,13 +49,15 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 		cd = new CollisionDetector();
 
 		try {
-			table = ImageIO.read(new File("images/pooltable.png"));
-			bar = ImageIO.read(new File("images/cuebar.png"));
-			stick = ImageIO.read(new File("images/cuestick.png"));
-			arrows = ImageIO.read(new File("images/cuemove.png"));
-			calls = ImageIO.read(new File("images/calls.png"));
-			
-			AudioInputStream audioIn = AudioSystem.getAudioInputStream(new File("sfx/cue.wav"));
+			table = ImageIO.read(getClass().getResource("images/pooltable.png"));
+			bar = ImageIO.read(getClass().getResource("images/cuebar.png"));
+			stick = ImageIO.read(getClass().getResource("images/cuestick.png"));
+			arrows = ImageIO.read(getClass().getResource("images/cuemove.png"));
+			calls = ImageIO.read(getClass().getResource("images/calls.png"));
+
+			size = new Dimension(table.getWidth(), table.getHeight());
+
+			AudioInputStream audioIn = AudioSystem.getAudioInputStream(getClass().getResource("sfx/cue.wav"));
 			cueSFX = AudioSystem.getClip();
 			cueSFX.open(audioIn);
 		} catch (Exception e) {
@@ -101,8 +105,13 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 		Pool pool = new Pool(game);
 		pool.addMouseListener(pool);
 		pool.addMouseMotionListener(pool);
+		Dimension size = pool.getPreferredSize();
 
 		JFrame frame = new JFrame("Pool");
+		frame.setResizable(false);
+		frame.setPreferredSize(size);
+		frame.setMinimumSize(size);
+		frame.setMaximumSize(size);
 		frame.add(pool);
 		frame.pack();
 		frame.setVisible(true);
@@ -110,9 +119,7 @@ public class Pool extends JPanel implements ActionListener, MouseListener, Mouse
 
 	@Override
 	public Dimension getPreferredSize() {
-		int width = table.getWidth();
-		int height = table.getHeight();
-		return new Dimension(width, height);
+		return size;
 	}
 
 	public void paintComponent(Graphics g) {

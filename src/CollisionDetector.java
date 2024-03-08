@@ -10,15 +10,15 @@ public class CollisionDetector {
 
 	public CollisionDetector() {
 		try {
-			AudioInputStream audioIn1 = AudioSystem.getAudioInputStream(new File("sfx/ball.wav"));
+			AudioInputStream audioIn1 = AudioSystem.getAudioInputStream(getClass().getResource("sfx/ball.wav"));
 			ballSFX = AudioSystem.getClip();
 			ballSFX.open(audioIn1);
 
-			AudioInputStream audioIn2 = AudioSystem.getAudioInputStream(new File("sfx/rail.wav"));
+			AudioInputStream audioIn2 = AudioSystem.getAudioInputStream(getClass().getResource("sfx/rail.wav"));
 			railSFX = AudioSystem.getClip();
 			railSFX.open(audioIn2);
 
-			AudioInputStream audioIn3 = AudioSystem.getAudioInputStream(new File("sfx/pocket.wav"));
+			AudioInputStream audioIn3 = AudioSystem.getAudioInputStream(getClass().getResource("sfx/pocket.wav"));
 			pocketSFX = AudioSystem.getClip();
 			pocketSFX.open(audioIn3);
 		} catch (Exception e) {
